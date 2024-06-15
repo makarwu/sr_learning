@@ -1,3 +1,7 @@
+# This file collects all the relevant code that we covered thus far
+# throughout Chapters 2-4.
+# This file can be run as a standalone script.
+
 import tiktoken
 import torch
 import torch.nn as nn
@@ -9,7 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 
 
 class GPTDatasetV1(Dataset):
-    def __init__(self, txt, tokenizer, max_length, stride):
+    def __init__(self, txt, tokenizer, max_length, stride, num_workers=0):
         self.input_ids = []
         self.target_ids = []
 
@@ -40,7 +44,7 @@ def create_dataloader_v1(txt, batch_size=4, max_length=256,
 
     # Create dataloader
     dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, num_workers=0)
+        dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last)
 
     return dataloader
 
@@ -51,7 +55,7 @@ def create_dataloader_v1(txt, batch_size=4, max_length=256,
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_in, d_out, context_length, dropout, num_heads, qkv_bias=False):
         super().__init__()
-        assert d_out % num_heads == 0, "d_out must be divisible by n_heads"
+        assert d_out % num_heads == 0, "d_out must be divisible by num_heads"
 
         self.d_out = d_out
         self.num_heads = num_heads
@@ -62,7 +66,7 @@ class MultiHeadAttention(nn.Module):
         self.W_value = nn.Linear(d_in, d_out, bias=qkv_bias)
         self.out_proj = nn.Linear(d_out, d_out)  # Linear layer to combine head outputs
         self.dropout = nn.Dropout(dropout)
-        self.register_buffer('mask', torch.triu(torch.ones(context_length, context_length), diagonal=1))
+        self.register_buffer("mask", torch.triu(torch.ones(context_length, context_length), diagonal=1))
 
     def forward(self, x):
         b, num_tokens, d_in = x.shape
@@ -98,7 +102,7 @@ class MultiHeadAttention(nn.Module):
         context_vec = (attn_weights @ values).transpose(1, 2)
 
         # Combine heads, where self.d_out = self.num_heads * self.head_dim
-        context_vec = context_vec.reshape(b, num_tokens, self.d_out)
+        context_vec = context_vec.contiguous().view(b, num_tokens, self.d_out)
         context_vec = self.out_proj(context_vec)  # optional projection
 
         return context_vec
@@ -229,8 +233,7 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
     return idx
 
 
-if __name__ == "__main__":
-
+def main():
     GPT_CONFIG_124M = {
         "vocab_size": 50257,     # Vocabulary size
         "context_length": 1024,  # Context length
@@ -268,3 +271,7 @@ if __name__ == "__main__":
     print("\nOutput:", out)
     print("Output length:", len(out[0]))
     print("Output text:", decoded_text)
+
+
+if __name__ == "__main__":
+    main()
