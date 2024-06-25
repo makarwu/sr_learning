@@ -105,3 +105,101 @@ if __name__ == "__main__":
     print(f"Total hyperparameter configurations: {total_combinations}")
 
     # Placeholder for the loss and best hyperparameters
+    best_val_loss = float('inf')
+    best_hparams = {}
+
+    script_path = os.path.abspath(__file__)
+    script_dir = os.path.dirname(script_path)
+    with open(os.path.join(script_dir, "the-verdict.txt"), "r", encoding="utf-8") as file:
+        text_data = file.read()
+    
+    tokenizer = tiktoken.get_encoding("gpt2")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    train_ratio = 0.95
+    split_idx = int(train_ratio * len(text_data))
+
+    torch.manual_seed(123)
+
+    interrupted = False
+    current_config = 0
+    for combination in hyperparameter_combinations:
+
+        try:
+            current_config += 1
+            print(f"Current combination {current_config} of {total_combinations} total combinations")
+
+            # Unpack the current combination of hyperparameters
+            HPARAM_CONFIG = dict(zip(HPARAM_GRID.keys(), combination))
+
+            GPT_CONFIG_124M = {
+                "vocab_size": 50257,    # Vocabulary size
+                "context_length": 256,  # Context length -- shortened from original 1024 tokens
+                "emb_dim": 768,         # Embedding dimension
+                "n_heads": 12,          # Number of attention heads
+                "n_layers": 12,         # Number of layers
+                "drop_rate": HPARAM_CONFIG["drop_rate"],
+                "qkv_bias": False,     # Query-Key-Value bias
+            }
+
+            torch.manual_seed(123)
+            train_loader = create_dataloader_v1(
+                text_data[:split_idx],
+                batch_size=HPARAM_CONFIG["batch_size"],
+                max_length=GPT_CONFIG_124M["context_length"],
+                stride=GPT_CONFIG_124M["context_length"],
+                drop_last=True,
+                shuffle=True,
+                num_workers=0
+            )
+
+            val_loader = create_dataloader_v1(
+                text_data[split_idx:],
+                batch_size=HPARAM_CONFIG["batch_size"],
+                max_length=GPT_CONFIG_124M["context_length"],
+                stride=GPT_CONFIG_124M["context_length"],
+                drop_last=False,
+                shuffle=False,
+                num_workers=0
+            )
+
+            model = GPTModel(GPT_CONFIG_124M)
+            model.to(device)
+
+            optimizer = torch.optim.AdamW(
+                model.parameters(),
+                lr=HPARAM_CONFIG["peak_lr"],
+                weight_decay=HPARAM_CONFIG["weight_decay"]
+            )
+
+            encoded_start_context = tokenizer.encode("Nevertheless")
+            encoded_tensor = torch.tensor(encoded_start_context).unsqueeze(0)
+
+            train_loss, val_loss = train_model(
+                    model, train_loader, val_loader, optimizer, device,
+                    n_epochs=HPARAM_CONFIG["n_epochs"],
+                    eval_freq=5, eval_iter=1,
+                    encoded_start_context=encoded_tensor,
+                    tokenizer=tokenizer,
+                    warmup_iters=HPARAM_CONFIG["warmup_iters"],
+                    initial_lr=HPARAM_CONFIG["initial_lr"],
+                    min_lr=HPARAM_CONFIG["min_lr"]
+            )
+
+            # Now we log the best parameters based on validation loss
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_train_loss = train_loss
+                best_hparams = HPARAM_CONFIG
+        
+        except KeyboardInterrupt:
+            print("Hyperparameter search completed.")
+            print(f"Best hyperparameters achieved: {best_hparams}")
+            print(f"Best Val loss: {best_val_loss} | Training Loss: {train_loss}")
+            interrupted = True
+            break
+    
+    if not interrupted:
+        print("Hyperparameter search completed.")
+        print(f"Best hyperparameters achieved: {best_hparams}")
+        print(f"Best Val loss: {best_val_loss} | Training Loss: {train_loss}")
