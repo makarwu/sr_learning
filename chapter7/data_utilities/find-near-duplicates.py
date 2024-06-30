@@ -86,4 +86,53 @@ def find_print_and_remove_near_duplicates(json_data, remove_duplicates=False, th
     return json_data
 
 if __name__ == "__main__":
-    pass
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--json_file",
+        type=str,
+        help=("Path to the dataset JSON file")
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.9,
+        help=("A sensitivity threshold between 0 and 1 where 1 is the strictest")
+    )
+    parser.add_argument(
+        "--remove_duplicates",
+        action="store_true",
+        default=False,
+        help=("Removes duplicates based on the 'input' or 'output' keys"
+              "(but not the 'instruction') and saves the cleaned JSON file as --json_output_file")
+    )
+    parser.add_argument(
+        "--json_output_file",
+        type=str,
+        help=("Path to the dataset JSON file")
+    )
+
+    args = parser.parse_args()
+
+    if args.remove_duplicates and not args.json_output_file:
+        raise ValueError(
+            "Provide an output file via --json_output_file"
+            "to save the cleaned JSON data"
+        )
+    
+    if not args.json_file:
+        json_data = example_data
+    
+    else:
+        with open(args.json_file, "r") as file:
+            json_data = json.load(file)
+    
+    json_data = find_print_and_remove_near_duplicates(
+        json_data=json_data,
+        remove_duplicates=args.remove_duplicates,
+        threshold=args.threshold
+    )
+
+    if args.remove_duplicates:
+        with open(args.json_output_file, "w") as file:
+            json.dump(json_data, file, indent=4)
